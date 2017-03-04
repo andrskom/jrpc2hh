@@ -1,0 +1,16 @@
+package {{.Package}}
+
+import (
+	"fmt"
+	jModels "github.com/andrskom/jrpc2hh/models"
+	{{range $index, $element := .Packages}}"{{$index}}"
+	{{end}}
+)
+
+func (s *{{.Service}}) Call(reqBody *jModels.RequestBody) (interface{}, *jModels.Error) {
+	switch reqBody.GetMethod() {
+	{{range $element := .Methods}}{{$element}}
+	{{end}}default:
+		return nil, jModels.NewError(jModels.ErrorCodeMethodNotFound, fmt.Sprintf("Unknown method '%s' for service '%s'", reqBody.GetMethod(), "{{.Service}}"), nil)
+	}
+}
