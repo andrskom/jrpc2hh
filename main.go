@@ -1,20 +1,18 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
-	"go/ast"
-	"go/doc"
 	"go/parser"
 	"go/token"
 	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"strings"
 	"text/template"
+	"time"
 )
 
 type ServiceGenData struct {
@@ -30,6 +28,44 @@ type MethodGenData struct {
 	ResultBlock string
 }
 
+type ImportMap map[string]*string
+
+func NewImportMap() *ImportMap {
+	am := make(ImportMap)
+	am["github.com/andrskom/jrpc2hh/models"] = "jModel"
+	return &am
+}
+
+func (am *ImportMap) Register(i string) {
+	if _, ok := am[i]; !ok {
+		am[i] = nil
+	}
+}
+
+func (am *ImportMap) GenerateAlias() {
+	crossMap := make(map[string]*bool)
+	for i, a := range am {
+		var p string
+		if strings.Contains(i, "/") {
+			path := strings.Split(i, "/")
+			p = paht[len(path)-1]
+		} else {
+			p = i
+		}
+		if _, ok := crossMap[p]; !ok {
+			crossMap[p] = nil
+		} else {
+			am[i] = fmt.Sprintf("%s_%d", p, randomNumberGenerator().Int())
+		}
+	}
+}
+
+func randomNumberGenerator() *rand.Rand {
+	s1 := rand.NewSource(time.Now().UnixNano())
+	r1 := rand.New(s1)
+	return r1
+}
+
 func main() {
 	var hDir string
 	flag.StringVar(&hDir, "s", "../../../service", "Service dir")
@@ -39,7 +75,7 @@ func main() {
 	logFatal("Error in autogenrated file deliting", err)
 
 	fs := token.NewFileSet()
-	d, err := parser.ParseDir(fs, hDir, nil, parser.ParseComments)
+	packages, err := parser.ParseDir(fs, hDir, nil, parser.ParseComments)
 	logFatal("Parsing dir error", err)
 
 	regExpService, err := regexp.Compile("jrpc2hh:service\\n")
@@ -54,99 +90,13 @@ func main() {
 	mTmpl, err := template.ParseFiles("./templates/method.tmpl")
 	logFatal("Can't parse method template", err)
 
-	for _, f := range d {
-		log.Print(f.Imports)
-		log.Print(f.Doc)
-		docs := doc.New(f, hDir, 0)
-		for _, t := range docs.Types {
-			if regExpService.Match([]byte(t.Doc)) {
-				// Place for finding function New for service
-				log.Printf("S %s", t.Name)
-				sgd := ServiceGenData{Package: f.Name, Service: t.Name, Methods: make([]string, 0), Packages: make(map[string]*bool)}
-				for _, m := range t.Methods {
-					if regExpMethod.Match([]byte(m.Doc)) {
-						log.Printf("  M %s", m.Name)
-						if len(m.Decl.Type.Params.List) != 2 {
-							log.Fatalf("%s.%s bad interface, mast has 2 params", t.Name, m.Name)
-						}
-						if len(m.Decl.Type.Results.List) != 1 {
-							log.Fatalf("%s.%s bad interface, mast has 1 result", t.Name, m.Name)
-						}
-						res, ok := m.Decl.Type.Results.List[0].Type.(*ast.Ident)
-						if !ok {
-							log.Fatalf("%s.%s can't cast res to *ast.Indentm, maybe you result doesn't implement error", t.Name, m.Name)
-						}
-						if res.Name != "error" {
-							log.Fatalf("%s.%s result isn't error", t.Name, m.Name)
-						}
+	log.Print(regExpService, regExpMethod, sTmpl, mTmpl)
 
-						mgd := MethodGenData{Method: m.Name}
-
-						if reflect.TypeOf(m.Decl.Type.Params.List[0].Type).String() == "*ast.SelectorExpr" {
-							pack := m.Decl.Type.Params.List[0].Type.(*ast.SelectorExpr).X.(*ast.Ident).Name
-							model := m.Decl.Type.Params.List[0].Type.(*ast.SelectorExpr).Sel.Name
-							if pack+model == "jModelsNilArgs" {
-								mgd.ArgsBlock = `if reqBody.HasParams() {
-			return nil, jModels.NewError(jModels.ErrorCodeInvalidParams, "That method of service can't has param", nil)
-		}
-		var args jModels.NilArgs`
-							} else {
-								mgd.ArgsBlock = fmt.Sprintf(`var args %s.%s
-		if reqBody.HasParams() {
-			err := json.Unmarshal(*reqBody.Params, &args)
-			if err != nil {
-				return nil, jModels.NewError(jModels.ErrorCodeInvalidParams, "Can't unmarshal params to args structure'", err.Error())
-			}
-		}`, pack, model)
-								sgd.Packages["encoding/json"] = nil
-								sgd.Packages["models"] = nil
-							}
-						} else {
-							model := m.Decl.Type.Params.List[0].Type.(*ast.Ident).Name
-							mgd.ArgsBlock = fmt.Sprintf(`var args %s
-		if reqBody.HasParams() {
-			err := json.Unmarshal(*reqBody.Params, &args)
-			if err != nil {
-				return nil, jModels.NewError(jModels.ErrorCodeInvalidParams, "Can't unmarshal params to args structure'", err.Error())
-			}
-		}`, model)
-							sgd.Packages["encoding/json"] = nil
-							sgd.Packages["models"] = nil
-						}
-
-						if reflect.TypeOf(m.Decl.Type.Params.List[1].Type).String() == "*ast.StarExpr" {
-							var pack, model string
-							if reflect.TypeOf(m.Decl.Type.Params.List[1].Type.(*ast.StarExpr).X).String() == "*ast.StarExpr" {
-								pack = m.Decl.Type.Params.List[1].Type.(*ast.StarExpr).X.(*ast.StarExpr).X.(*ast.SelectorExpr).X.(*ast.Ident).Name
-								model = m.Decl.Type.Params.List[1].Type.(*ast.StarExpr).X.(*ast.StarExpr).X.(*ast.SelectorExpr).Sel.Name
-								sgd.Packages["models"] = nil
-							} else if reflect.TypeOf(m.Decl.Type.Params.List[1].Type.(*ast.StarExpr).X).String() == "*ast.SelectorExpr" {
-								pack = m.Decl.Type.Params.List[1].Type.(*ast.StarExpr).X.(*ast.SelectorExpr).X.(*ast.Ident).Name
-								model = m.Decl.Type.Params.List[1].Type.(*ast.StarExpr).X.(*ast.SelectorExpr).Sel.Name
-								sgd.Packages["models"] = nil
-							} else {
-								model = m.Decl.Type.Params.List[1].Type.(*ast.StarExpr).X.(*ast.Ident).Name
-							}
-							mgd.ResultBlock = fmt.Sprintf("var res %s.%s", pack, model)
-						} else {
-							log.Fatal("Bad result, result must be star")
-						}
-
-						buf := bytes.NewBuffer(make([]byte, 0))
-						mTmpl.Execute(buf, mgd)
-						sgd.Methods = append(sgd.Methods, buf.String())
-					}
-				}
-
-				file, err := os.OpenFile(fmt.Sprintf("%s/jrpc2hh_%s.go", hDir, strings.ToLower(t.Name)),
-					os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
-					0755)
-				if err != nil {
-					log.Fatalf(fmt.Sprintf("Can't open file for writing generated data, %s", err.Error()))
-				}
-				sTmpl.Execute(file, sgd)
-			}
-		}
+	if len(packages) != 1 {
+		log.Fatal("Expected that only one package will be parse")
+	}
+	for name, p := range packages {
+		log.Print(name, p)
 	}
 }
 
