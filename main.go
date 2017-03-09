@@ -28,44 +28,6 @@ type MethodGenData struct {
 	ResultBlock string
 }
 
-type ImportMap map[string]*string
-
-func NewImportMap() *ImportMap {
-	am := make(ImportMap)
-	am["github.com/andrskom/jrpc2hh/models"] = "jModel"
-	return &am
-}
-
-func (am *ImportMap) Register(i string) {
-	if _, ok := am[i]; !ok {
-		am[i] = nil
-	}
-}
-
-func (am *ImportMap) GenerateAlias() {
-	crossMap := make(map[string]*bool)
-	for i, a := range am {
-		var p string
-		if strings.Contains(i, "/") {
-			path := strings.Split(i, "/")
-			p = paht[len(path)-1]
-		} else {
-			p = i
-		}
-		if _, ok := crossMap[p]; !ok {
-			crossMap[p] = nil
-		} else {
-			am[i] = fmt.Sprintf("%s_%d", p, randomNumberGenerator().Int())
-		}
-	}
-}
-
-func randomNumberGenerator() *rand.Rand {
-	s1 := rand.NewSource(time.Now().UnixNano())
-	r1 := rand.New(s1)
-	return r1
-}
-
 func main() {
 	var hDir string
 	flag.StringVar(&hDir, "s", "../../../service", "Service dir")
