@@ -6,27 +6,17 @@ import (
 	"go/parser"
 	"go/token"
 	"log"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"text/template"
-	"time"
+	"github.com/andrskom/jrpc2hh/import"
+	"strings"
+	"reflect"
+	"go/ast"
+	"github.com/andrskom/jrpc2hh/service"
+	"github.com/andrskom/jrpc2hh/method"
 )
-
-type ServiceGenData struct {
-	Package  string
-	Service  string
-	Methods  []string
-	Packages map[string]*bool
-}
-
-type MethodGenData struct {
-	Method      string
-	ArgsBlock   string
-	ResultBlock string
-}
 
 func main() {
 	var hDir string
@@ -40,10 +30,10 @@ func main() {
 	packages, err := parser.ParseDir(fs, hDir, nil, parser.ParseComments)
 	logFatal("Parsing dir error", err)
 
-	regExpService, err := regexp.Compile("jrpc2hh:service\\n")
+	regExpService, err := regexp.Compile("//[ ]*jrpc2hh:service")
 	logFatal("Compiling regexp for service error", err)
 
-	regExpMethod, err := regexp.Compile("jrpc2hh:method\\n")
+	regExpMethod, err := regexp.Compile("//[ ]*jrpc2hh:method")
 	logFatal("Compiling regep for method error", err)
 
 	sTmpl, err := template.ParseFiles("./templates/service.tmpl")
@@ -57,9 +47,149 @@ func main() {
 	if len(packages) != 1 {
 		log.Fatal("Expected that only one package will be parse")
 	}
-	for name, p := range packages {
-		log.Print(name, p)
+
+	iMap := jrpc2hh.NewImportMap()
+	sl := make(service.ServiceList)
+	ml := make(method.MethodList)
+
+	for _, p := range packages {
+		for _, f := range p.Files {
+			// collect imports
+			localIMap := make(map[string]string)
+			for _, im := range f.Imports {
+				pV := strings.Trim(im.Path.Value, "\"")
+				iMap.Register(pV)
+				if im.Name != nil {
+					localIMap[im.Name.String()] = pV
+				} else {
+					localIMap[pV] = pV
+				}
+			}
+
+			// collect structs
+			for _, d := range f.Decls {
+				if reflect.TypeOf(d).Elem().Name() == "GenDecl" {
+					gd, ok := (d).(*ast.GenDecl)
+					if !ok {
+						log.Fatal("Bad assertation type GenDecl")
+					}
+					if gd.Tok.String() == "type" && docHasMatch(regExpService, gd.Doc) {
+						if len(gd.Specs) != 1 {
+							log.Fatal("Bad Specs for type")
+						}
+						spec, ok := gd.Specs[0].(*ast.TypeSpec)
+						if !ok {
+							log.Fatal("Bad assertation TypeSpec")
+						}
+						if spec.Name == nil {
+							log.Fatal("Bad Ident for types spec")
+						}
+						sl.Add(spec.Name.Name)
+					}
+				} else if reflect.TypeOf(d).Elem().Name() == "FuncDecl" {
+					fd, ok := (d).(*ast.FuncDecl)
+					if !ok {
+						log.Fatal("Bad assertation func FunDecl")
+					}
+					if docHasMatch(regExpMethod, fd.Doc) {
+						mN := fd.Name
+						if fd.Recv == nil {
+							log.Fatal("Recv of service method can't be nil")
+						}
+						if len(fd.Recv.List) != 1 {
+							log.Fatal("List of recv service method can't be nil")
+						}
+						mT, ok := (fd.Recv.List[0].Type).(*ast.StarExpr)
+						if !ok {
+							log.Fatal("Type associated with method must be pointer")
+						}
+						i, ok := (mT.X).(*ast.Ident)
+						if !ok {
+							log.Fatal("Bad Ident for method spec")
+						}
+						assType := i.Name
+
+						if len(fd.Type.Params.List) != 2 {
+							log.Fatal("Count of params must be equal 2")
+						}
+						argsAst := fd.Type.Params.List[0]
+						resAst := fd.Type.Params.List[1]
+
+						var args *method.Struct
+						var res *method.Struct
+
+						switch reflect.TypeOf(argsAst.Type).String() {
+						case "*ast.SelectorExpr":
+							t := (argsAst.Type).(*ast.SelectorExpr)
+							x, ok := (t.X).(*ast.Ident)
+							if !ok {
+								log.Fatal("Bad assertation type")
+							}
+							if _, ok := localIMap[x.Name]; !ok {
+								log.Fatal("Problem with inport and alias")
+							}
+							args = method.NewStruct(localIMap[x.Name], t.Sel.Name)
+						case "*ast.Ident":
+							t := (argsAst.Type).(*ast.Ident)
+							args = method.NewStruct("", t.Name)
+						default:
+							log.Fatal("Unknown type of args")
+						}
+
+						if reflect.TypeOf(resAst.Type).String() != "*ast.StarExpr" {
+							log.Fatal("Result must be pointer")
+						}
+
+						sE, _ := (resAst.Type).(*ast.StarExpr)
+
+						log.Print(sE.X, sE.Star)
+
+
+						log.Print("--" + reflect.TypeOf(resAst.Type).String())
+						switch reflect.TypeOf(resAst.Type).String() {
+						//case "*ast.SelectorExpr":
+						//	t := (argsAst.Type).(*ast.SelectorExpr)
+						//	x, ok := (t.X).(*ast.Ident)
+						//	if !ok {
+						//		log.Fatal("Bad assertation type")
+						//	}
+						//	if _, ok := localIMap[x.Name]; !ok {
+						//		log.Fatal("Problem with inport and alias")
+						//	}
+						//	args = method.NewStruct(localIMap[x.Name], t.Sel.Name)
+						//case "*ast.Ident":
+						//	t := (argsAst.Type).(*ast.Ident)
+						//	args = method.NewStruct("", t.Name)
+						//default:
+						//	log.Fatal("Unknown type of args")
+						}
+
+
+						log.Print(mN, assType)
+						log.Print(args, res)
+					}
+				}
+			}
+		}
 	}
+
+	log.Print("---------------------------")
+	log.Print(iMap)
+	log.Print(sl)
+	log.Print(ml)
+}
+
+func docHasMatch(regexp *regexp.Regexp, doc *ast.CommentGroup) bool {
+	res := false
+	if doc != nil {
+		for _, cm := range doc.List {
+			if regexp.Match([]byte(cm.Text)) {
+				res = true
+			}
+		}
+	}
+
+	return res
 }
 
 func logFatal(comment string, err error) {
