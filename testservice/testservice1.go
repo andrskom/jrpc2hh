@@ -40,6 +40,11 @@ func (s *Test1) AnotherPackageResult(args jModels.NilArgs, res *models.SomeModel
 }
 
 // jrpc2hh:method
-func (s *Test1) DoubleStarResult(args jModels.NilArgs, res **models.SomeModel) error {
+func (s *Test1) DoubleStarAnotherResult(args jModels.NilArgs, res **models.SomeModel) error {
+	return nil
+}
+
+// jrpc2hh:method
+func (s *Test1) DoubleStarResult(args jModels.NilArgs, res **Test1NilArgsResult) error {
 	return nil
 }

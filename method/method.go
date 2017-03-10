@@ -22,8 +22,13 @@ func NewMethod(n string, a *Struct, r *Struct) *Method {
 type Struct struct{
 	Pack string
 	Name string
+	prefix string
 }
 
 func NewStruct(p string, n string) *Struct{
-	return &Struct{p, n}
+	return &Struct{p, n, ""}
+}
+
+func (s *Struct) SetPrefix(p string) {
+	s.prefix = p
 }

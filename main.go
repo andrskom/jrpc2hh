@@ -42,7 +42,7 @@ func main() {
 	mTmpl, err := template.ParseFiles("./templates/method.tmpl")
 	logFatal("Can't parse method template", err)
 
-	log.Print(regExpService, regExpMethod, sTmpl, mTmpl)
+	log.Print(sTmpl, mTmpl)
 
 	if len(packages) != 1 {
 		log.Fatal("Expected that only one package will be parse")
@@ -92,7 +92,7 @@ func main() {
 						log.Fatal("Bad assertation func FunDecl")
 					}
 					if docHasMatch(regExpMethod, fd.Doc) {
-						mN := fd.Name
+						mN := fd.Name.String()
 						if fd.Recv == nil {
 							log.Fatal("Recv of service method can't be nil")
 						}
@@ -142,31 +142,45 @@ func main() {
 
 						sE, _ := (resAst.Type).(*ast.StarExpr)
 
-						log.Print(sE.X, sE.Star)
-
-
-						log.Print("--" + reflect.TypeOf(resAst.Type).String())
-						switch reflect.TypeOf(resAst.Type).String() {
-						//case "*ast.SelectorExpr":
-						//	t := (argsAst.Type).(*ast.SelectorExpr)
-						//	x, ok := (t.X).(*ast.Ident)
-						//	if !ok {
-						//		log.Fatal("Bad assertation type")
-						//	}
-						//	if _, ok := localIMap[x.Name]; !ok {
-						//		log.Fatal("Problem with inport and alias")
-						//	}
-						//	args = method.NewStruct(localIMap[x.Name], t.Sel.Name)
-						//case "*ast.Ident":
-						//	t := (argsAst.Type).(*ast.Ident)
-						//	args = method.NewStruct("", t.Name)
-						//default:
-						//	log.Fatal("Unknown type of args")
+						switch reflect.TypeOf(sE.X).String() {
+						case "*ast.StarExpr":
+							t := (sE.X).(*ast.StarExpr)
+							switch reflect.TypeOf(t.X).String() {
+							case "*ast.Ident":
+								t := (t.X).(*ast.Ident)
+								res = method.NewStruct("", t.Name)
+								res.SetPrefix("*")
+							case "*ast.SelectorExpr":
+								t := (t.X).(*ast.SelectorExpr)
+								x, ok := (t.X).(*ast.Ident)
+								if !ok {
+									log.Fatal("Bad assertation type")
+								}
+								if _, ok := localIMap[x.Name]; !ok {
+									log.Fatal("Problem with inport and alias")
+								}
+								res = method.NewStruct(localIMap[x.Name], t.Sel.Name)
+								res.SetPrefix("*")
+							default:
+								log.Fatal("Unknown type of res")
+							}
+						case "*ast.SelectorExpr":
+							t := (sE.X).(*ast.SelectorExpr)
+							x, ok := (t.X).(*ast.Ident)
+							if !ok {
+								log.Fatal("Bad assertation type")
+							}
+							if _, ok := localIMap[x.Name]; !ok {
+								log.Fatal("Problem with inport and alias")
+							}
+							res = method.NewStruct(localIMap[x.Name], t.Sel.Name)
+						case "*ast.Ident":
+							t := (sE.X).(*ast.Ident)
+							res = method.NewStruct("", t.Name)
+						default:
+							log.Fatal("Unknown type of res")
 						}
-
-
-						log.Print(mN, assType)
-						log.Print(args, res)
+						ml.Add(assType, method.NewMethod(mN, args, res))
 					}
 				}
 			}
@@ -174,6 +188,7 @@ func main() {
 	}
 
 	log.Print("---------------------------")
+	iMap.GenerateAlias()
 	log.Print(iMap)
 	log.Print(sl)
 	log.Print(ml)
