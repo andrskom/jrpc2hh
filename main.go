@@ -1,37 +1,29 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
-	"go/ast"
-	"go/doc"
 	"go/parser"
 	"go/token"
 	"log"
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
-	"strings"
 	"text/template"
+	"github.com/andrskom/jrpc2hh/imports"
+	"strings"
+	"reflect"
+	"go/ast"
+	"github.com/andrskom/jrpc2hh/service"
+	"github.com/andrskom/jrpc2hh/method"
+	"bytes"
 )
 
-type ServiceGenData struct {
-	Package  string
-	Service  string
-	Methods  []string
-	Packages map[string]*bool
-}
 
-type MethodGenData struct {
-	Method      string
-	ArgsBlock   string
-	ResultBlock string
-}
+var hDir string
+var pack string
 
 func main() {
-	var hDir string
 	flag.StringVar(&hDir, "s", "../../../service", "Service dir")
 	flag.Parse()
 
@@ -39,115 +31,270 @@ func main() {
 	logFatal("Error in autogenrated file deliting", err)
 
 	fs := token.NewFileSet()
-	d, err := parser.ParseDir(fs, hDir, nil, parser.ParseComments)
+	packages, err := parser.ParseDir(fs, hDir, nil, parser.ParseComments)
 	logFatal("Parsing dir error", err)
 
-	regExpService, err := regexp.Compile("jrpc2hh:service\\n")
+	regExpService, err := regexp.Compile("//[ ]*jrpc2hh:service")
 	logFatal("Compiling regexp for service error", err)
 
-	regExpMethod, err := regexp.Compile("jrpc2hh:method\\n")
+	regExpMethod, err := regexp.Compile("//[ ]*jrpc2hh:method")
 	logFatal("Compiling regep for method error", err)
 
+	if len(packages) != 1 {
+		log.Fatal("Expected that only one package will be parse")
+	}
+	for p, _ := range packages {
+		pack = p
+	}
+
+	iMap, sl, ml := parse(regExpService, regExpMethod, packages)
+	iMap.GenerateAlias()
+	generate(iMap, sl, ml)
+
+	log.Print("---------------------------")
+
+	log.Print(iMap)
+	log.Print(sl)
+	log.Print(ml)
+}
+
+func generate(iMap *imports.ImportMap, sl service.ServiceList, ml method.MethodList) {
 	sTmpl, err := template.ParseFiles("./templates/service.tmpl")
 	logFatal("Can't parse service template", err)
 
 	mTmpl, err := template.ParseFiles("./templates/method.tmpl")
 	logFatal("Can't parse method template", err)
 
-	for _, f := range d {
-		log.Print(f.Imports)
-		log.Print(f.Doc)
-		docs := doc.New(f, hDir, 0)
-		for _, t := range docs.Types {
-			if regExpService.Match([]byte(t.Doc)) {
-				// Place for finding function New for service
-				log.Printf("S %s", t.Name)
-				sgd := ServiceGenData{Package: f.Name, Service: t.Name, Methods: make([]string, 0), Packages: make(map[string]*bool)}
-				for _, m := range t.Methods {
-					if regExpMethod.Match([]byte(m.Doc)) {
-						log.Printf("  M %s", m.Name)
-						if len(m.Decl.Type.Params.List) != 2 {
-							log.Fatalf("%s.%s bad interface, mast has 2 params", t.Name, m.Name)
-						}
-						if len(m.Decl.Type.Results.List) != 1 {
-							log.Fatalf("%s.%s bad interface, mast has 1 result", t.Name, m.Name)
-						}
-						res, ok := m.Decl.Type.Results.List[0].Type.(*ast.Ident)
-						if !ok {
-							log.Fatalf("%s.%s can't cast res to *ast.Indentm, maybe you result doesn't implement error", t.Name, m.Name)
-						}
-						if res.Name != "error" {
-							log.Fatalf("%s.%s result isn't error", t.Name, m.Name)
-						}
+	for sn, sm := range ml {
+		usedImports := make(map[string]string)
+		usedImports["encoding/json"] = "json"
+		methods := make([]string, 0)
+		for _, m := range sm {
+			args := generateArgsBlock(m.Args, &usedImports, iMap)
+			res := generateResBlock(m.Result, &usedImports, iMap)
 
-						mgd := MethodGenData{Method: m.Name}
+			buf := bytes.NewBuffer(make([]byte, 0))
+			mTmpl.Execute(buf, struct {
+				Method string
+				ArgsBlock string
+				ResultBlock string
+			}{m.Name, args, res})
+			methods = append(methods, buf.String())
+			log.Print(buf.String())
+			log.Print(usedImports)
+		}
 
-						if reflect.TypeOf(m.Decl.Type.Params.List[0].Type).String() == "*ast.SelectorExpr" {
-							pack := m.Decl.Type.Params.List[0].Type.(*ast.SelectorExpr).X.(*ast.Ident).Name
-							model := m.Decl.Type.Params.List[0].Type.(*ast.SelectorExpr).Sel.Name
-							if pack+model == "jModelsNilArgs" {
-								mgd.ArgsBlock = `if reqBody.HasParams() {
+		file, err := os.OpenFile(fmt.Sprintf("%s/jrpc2hh_%s.go", hDir, strings.ToLower(sn)),
+			os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
+			0755)
+		if err != nil {
+			log.Fatalf(fmt.Sprintf("Can't open file for writing generated data, %s", err.Error()))
+		}
+		sTmpl.Execute(file, struct {
+			Package string
+			Imports map[string]string
+			Service string
+			Methods []string
+		}{pack, usedImports, sn, methods})
+	}
+}
+
+func generateResBlock(res *method.Struct, ui *map[string]string, iMap *imports.ImportMap) string {
+	if res.Pack+res.Name == "github.com/andrskom/jrpc2hh/modelsNilResult" {
+		return `var res jModels.NilResult`
+	} else {
+		var resType string
+		if res.Pack != "" {
+			(*ui)[res.Pack] = iMap.GetFormattedAlias(res.Pack)
+			resType = res.Prefix + res.Pack + "." + res.Name
+		} else {
+			resType = res.Prefix + res.Name
+		}
+		return "var res " + resType
+	}
+}
+
+func generateArgsBlock(args *method.Struct, ui *map[string]string, iMap *imports.ImportMap) string{
+	if args.Pack+args.Name == "github.com/andrskom/jrpc2hh/modelsNilArgs" {
+		(*ui)[args.Pack] = iMap.GetFormattedAlias(args.Pack)
+		return `if reqBody.HasParams() {
 			return nil, jModels.NewError(jModels.ErrorCodeInvalidParams, "That method of service can't has param", nil)
 		}
 		var args jModels.NilArgs`
-							} else {
-								mgd.ArgsBlock = fmt.Sprintf(`var args %s.%s
+	} else {
+		var argsType string
+		if args.Pack != "" {
+			(*ui)[args.Pack] = iMap.GetFormattedAlias(args.Pack)
+			argsType = (*ui)[args.Pack] + "." + args.Name
+		} else {
+			argsType = args.Name
+		}
+		return fmt.Sprintf(`var args %s
 		if reqBody.HasParams() {
 			err := json.Unmarshal(*reqBody.Params, &args)
 			if err != nil {
 				return nil, jModels.NewError(jModels.ErrorCodeInvalidParams, "Can't unmarshal params to args structure'", err.Error())
 			}
-		}`, pack, model)
-								sgd.Packages["encoding/json"] = nil
-								sgd.Packages["models"] = nil
-							}
-						} else {
-							model := m.Decl.Type.Params.List[0].Type.(*ast.Ident).Name
-							mgd.ArgsBlock = fmt.Sprintf(`var args %s
-		if reqBody.HasParams() {
-			err := json.Unmarshal(*reqBody.Params, &args)
-			if err != nil {
-				return nil, jModels.NewError(jModels.ErrorCodeInvalidParams, "Can't unmarshal params to args structure'", err.Error())
+		}`, argsType)
+	}
+}
+
+func parse(regExpService *regexp.Regexp, regExpMethod *regexp.Regexp, packages map[string]*ast.Package) (*imports.ImportMap, service.ServiceList, method.MethodList) {
+	iMap := imports.NewImportMap()
+	sl := make(service.ServiceList)
+	ml := make(method.MethodList)
+
+	for _, p := range packages {
+		for _, f := range p.Files {
+			// collect imports
+			localIMap := make(map[string]string)
+			for _, im := range f.Imports {
+				pV := strings.Trim(im.Path.Value, "\"")
+				iMap.Register(pV)
+				if im.Name != nil {
+					localIMap[im.Name.String()] = pV
+				} else {
+					localIMap[pV] = pV
+				}
 			}
-		}`, model)
-							sgd.Packages["encoding/json"] = nil
-							sgd.Packages["models"] = nil
-						}
 
-						if reflect.TypeOf(m.Decl.Type.Params.List[1].Type).String() == "*ast.StarExpr" {
-							var pack, model string
-							if reflect.TypeOf(m.Decl.Type.Params.List[1].Type.(*ast.StarExpr).X).String() == "*ast.StarExpr" {
-								pack = m.Decl.Type.Params.List[1].Type.(*ast.StarExpr).X.(*ast.StarExpr).X.(*ast.SelectorExpr).X.(*ast.Ident).Name
-								model = m.Decl.Type.Params.List[1].Type.(*ast.StarExpr).X.(*ast.StarExpr).X.(*ast.SelectorExpr).Sel.Name
-								sgd.Packages["models"] = nil
-							} else if reflect.TypeOf(m.Decl.Type.Params.List[1].Type.(*ast.StarExpr).X).String() == "*ast.SelectorExpr" {
-								pack = m.Decl.Type.Params.List[1].Type.(*ast.StarExpr).X.(*ast.SelectorExpr).X.(*ast.Ident).Name
-								model = m.Decl.Type.Params.List[1].Type.(*ast.StarExpr).X.(*ast.SelectorExpr).Sel.Name
-								sgd.Packages["models"] = nil
-							} else {
-								model = m.Decl.Type.Params.List[1].Type.(*ast.StarExpr).X.(*ast.Ident).Name
+			// collect structs
+			for _, d := range f.Decls {
+				//collect services
+				if reflect.TypeOf(d).Elem().Name() == "GenDecl" {
+					gd, ok := (d).(*ast.GenDecl)
+					if !ok {
+						log.Fatal("Bad assertation type GenDecl")
+					}
+					if gd.Tok.String() == "type" && docHasMatch(regExpService, gd.Doc) {
+						if len(gd.Specs) != 1 {
+							log.Fatal("Bad Specs for type")
+						}
+						spec, ok := gd.Specs[0].(*ast.TypeSpec)
+						if !ok {
+							log.Fatal("Bad assertation TypeSpec")
+						}
+						if spec.Name == nil {
+							log.Fatal("Bad Ident for types spec")
+						}
+						sl.Add(spec.Name.Name)
+					}
+				// collect methods
+				} else if reflect.TypeOf(d).Elem().Name() == "FuncDecl" {
+					fd, ok := (d).(*ast.FuncDecl)
+					if !ok {
+						log.Fatal("Bad assertation func FunDecl")
+					}
+					if docHasMatch(regExpMethod, fd.Doc) {
+						mN := fd.Name.String()
+						if fd.Recv == nil {
+							log.Fatal("Recv of service method can't be nil")
+						}
+						if len(fd.Recv.List) != 1 {
+							log.Fatal("List of recv service method can't be nil")
+						}
+						mT, ok := (fd.Recv.List[0].Type).(*ast.StarExpr)
+						if !ok {
+							log.Fatal("Type associated with method must be pointer")
+						}
+						i, ok := (mT.X).(*ast.Ident)
+						if !ok {
+							log.Fatal("Bad Ident for method spec")
+						}
+						assType := i.Name
+
+						if len(fd.Type.Params.List) != 2 {
+							log.Fatal("Count of params must be equal 2")
+						}
+						argsAst := fd.Type.Params.List[0]
+						resAst := fd.Type.Params.List[1]
+
+						var args *method.Struct
+						var res *method.Struct
+
+						switch reflect.TypeOf(argsAst.Type).String() {
+						case "*ast.SelectorExpr":
+							t := (argsAst.Type).(*ast.SelectorExpr)
+							x, ok := (t.X).(*ast.Ident)
+							if !ok {
+								log.Fatal("Bad assertation type")
 							}
-							mgd.ResultBlock = fmt.Sprintf("var res %s.%s", pack, model)
-						} else {
-							log.Fatal("Bad result, result must be star")
+							if _, ok := localIMap[x.Name]; !ok {
+								log.Fatal("Problem with inport and alias")
+							}
+							args = method.NewStruct(localIMap[x.Name], t.Sel.Name)
+						case "*ast.Ident":
+							t := (argsAst.Type).(*ast.Ident)
+							args = method.NewStruct("", t.Name)
+						default:
+							log.Fatal("Unknown type of args")
 						}
 
-						buf := bytes.NewBuffer(make([]byte, 0))
-						mTmpl.Execute(buf, mgd)
-						sgd.Methods = append(sgd.Methods, buf.String())
+						if reflect.TypeOf(resAst.Type).String() != "*ast.StarExpr" {
+							log.Fatal("Result must be pointer")
+						}
+
+						sE, _ := (resAst.Type).(*ast.StarExpr)
+
+						switch reflect.TypeOf(sE.X).String() {
+						case "*ast.StarExpr":
+							t := (sE.X).(*ast.StarExpr)
+							switch reflect.TypeOf(t.X).String() {
+							case "*ast.Ident":
+								t := (t.X).(*ast.Ident)
+								res = method.NewStruct("", t.Name)
+								res.SetPrefix("*")
+							case "*ast.SelectorExpr":
+								t := (t.X).(*ast.SelectorExpr)
+								x, ok := (t.X).(*ast.Ident)
+								if !ok {
+									log.Fatal("Bad assertation type")
+								}
+								if _, ok := localIMap[x.Name]; !ok {
+									log.Fatal("Problem with inport and alias")
+								}
+								res = method.NewStruct(localIMap[x.Name], t.Sel.Name)
+								res.SetPrefix("*")
+							default:
+								log.Fatal("Unknown type of res")
+							}
+						case "*ast.SelectorExpr":
+							t := (sE.X).(*ast.SelectorExpr)
+							x, ok := (t.X).(*ast.Ident)
+							if !ok {
+								log.Fatal("Bad assertation type")
+							}
+							if _, ok := localIMap[x.Name]; !ok {
+								log.Fatal("Problem with inport and alias")
+							}
+							res = method.NewStruct(localIMap[x.Name], t.Sel.Name)
+						case "*ast.Ident":
+							t := (sE.X).(*ast.Ident)
+							res = method.NewStruct("", t.Name)
+						default:
+							log.Fatal("Unknown type of res")
+						}
+						ml.Add(assType, method.NewMethod(mN, args, res))
 					}
 				}
-
-				file, err := os.OpenFile(fmt.Sprintf("%s/jrpc2hh_%s.go", hDir, strings.ToLower(t.Name)),
-					os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
-					0755)
-				if err != nil {
-					log.Fatalf(fmt.Sprintf("Can't open file for writing generated data, %s", err.Error()))
-				}
-				sTmpl.Execute(file, sgd)
 			}
 		}
 	}
+
+	return iMap, sl, ml
+}
+
+func docHasMatch(regexp *regexp.Regexp, doc *ast.CommentGroup) bool {
+	res := false
+	if doc != nil {
+		for _, cm := range doc.List {
+			if regexp.Match([]byte(cm.Text)) {
+				res = true
+			}
+		}
+	}
+
+	return res
 }
 
 func logFatal(comment string, err error) {

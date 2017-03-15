@@ -2,8 +2,7 @@ package {{.Package}}
 
 import (
 	"fmt"
-	jModels "github.com/andrskom/jrpc2hh/models"
-	{{range $index, $element := .Packages}}"{{$index}}"
+	{{range $index, $element := .Imports}}{{$element}} "{{$index}}"
 	{{end}}
 )
 
