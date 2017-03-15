@@ -10,16 +10,20 @@ import (
 	"path/filepath"
 	"regexp"
 	"text/template"
-	"github.com/andrskom/jrpc2hh/import"
+	"github.com/andrskom/jrpc2hh/imports"
 	"strings"
 	"reflect"
 	"go/ast"
 	"github.com/andrskom/jrpc2hh/service"
 	"github.com/andrskom/jrpc2hh/method"
+	"bytes"
 )
 
+
+var hDir string
+var pack string
+
 func main() {
-	var hDir string
 	flag.StringVar(&hDir, "s", "../../../service", "Service dir")
 	flag.Parse()
 
@@ -36,19 +40,107 @@ func main() {
 	regExpMethod, err := regexp.Compile("//[ ]*jrpc2hh:method")
 	logFatal("Compiling regep for method error", err)
 
+	if len(packages) != 1 {
+		log.Fatal("Expected that only one package will be parse")
+	}
+	for p, _ := range packages {
+		pack = p
+	}
+
+	iMap, sl, ml := parse(regExpService, regExpMethod, packages)
+	iMap.GenerateAlias()
+	generate(iMap, sl, ml)
+
+	log.Print("---------------------------")
+
+	log.Print(iMap)
+	log.Print(sl)
+	log.Print(ml)
+}
+
+func generate(iMap *imports.ImportMap, sl service.ServiceList, ml method.MethodList) {
 	sTmpl, err := template.ParseFiles("./templates/service.tmpl")
 	logFatal("Can't parse service template", err)
 
 	mTmpl, err := template.ParseFiles("./templates/method.tmpl")
 	logFatal("Can't parse method template", err)
 
-	log.Print(sTmpl, mTmpl)
+	for sn, sm := range ml {
+		usedImports := make(map[string]string)
+		usedImports["encoding/json"] = "json"
+		methods := make([]string, 0)
+		for _, m := range sm {
+			args := generateArgsBlock(m.Args, &usedImports, iMap)
+			res := generateResBlock(m.Result, &usedImports, iMap)
 
-	if len(packages) != 1 {
-		log.Fatal("Expected that only one package will be parse")
+			buf := bytes.NewBuffer(make([]byte, 0))
+			mTmpl.Execute(buf, struct {
+				Method string
+				ArgsBlock string
+				ResultBlock string
+			}{m.Name, args, res})
+			methods = append(methods, buf.String())
+			log.Print(buf.String())
+			log.Print(usedImports)
+		}
+
+		file, err := os.OpenFile(fmt.Sprintf("%s/jrpc2hh_%s.go", hDir, strings.ToLower(sn)),
+			os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
+			0755)
+		if err != nil {
+			log.Fatalf(fmt.Sprintf("Can't open file for writing generated data, %s", err.Error()))
+		}
+		sTmpl.Execute(file, struct {
+			Package string
+			Imports map[string]string
+			Service string
+			Methods []string
+		}{pack, usedImports, sn, methods})
 	}
+}
 
-	iMap := jrpc2hh.NewImportMap()
+func generateResBlock(res *method.Struct, ui *map[string]string, iMap *imports.ImportMap) string {
+	if res.Pack+res.Name == "github.com/andrskom/jrpc2hh/modelsNilResult" {
+		return `var res jModels.NilResult`
+	} else {
+		var resType string
+		if res.Pack != "" {
+			(*ui)[res.Pack] = iMap.GetFormattedAlias(res.Pack)
+			resType = res.Prefix + res.Pack + "." + res.Name
+		} else {
+			resType = res.Prefix + res.Name
+		}
+		return "var res " + resType
+	}
+}
+
+func generateArgsBlock(args *method.Struct, ui *map[string]string, iMap *imports.ImportMap) string{
+	if args.Pack+args.Name == "github.com/andrskom/jrpc2hh/modelsNilArgs" {
+		(*ui)[args.Pack] = iMap.GetFormattedAlias(args.Pack)
+		return `if reqBody.HasParams() {
+			return nil, jModels.NewError(jModels.ErrorCodeInvalidParams, "That method of service can't has param", nil)
+		}
+		var args jModels.NilArgs`
+	} else {
+		var argsType string
+		if args.Pack != "" {
+			(*ui)[args.Pack] = iMap.GetFormattedAlias(args.Pack)
+			argsType = (*ui)[args.Pack] + "." + args.Name
+		} else {
+			argsType = args.Name
+		}
+		return fmt.Sprintf(`var args %s
+		if reqBody.HasParams() {
+			err := json.Unmarshal(*reqBody.Params, &args)
+			if err != nil {
+				return nil, jModels.NewError(jModels.ErrorCodeInvalidParams, "Can't unmarshal params to args structure'", err.Error())
+			}
+		}`, argsType)
+	}
+}
+
+func parse(regExpService *regexp.Regexp, regExpMethod *regexp.Regexp, packages map[string]*ast.Package) (*imports.ImportMap, service.ServiceList, method.MethodList) {
+	iMap := imports.NewImportMap()
 	sl := make(service.ServiceList)
 	ml := make(method.MethodList)
 
@@ -68,6 +160,7 @@ func main() {
 
 			// collect structs
 			for _, d := range f.Decls {
+				//collect services
 				if reflect.TypeOf(d).Elem().Name() == "GenDecl" {
 					gd, ok := (d).(*ast.GenDecl)
 					if !ok {
@@ -86,6 +179,7 @@ func main() {
 						}
 						sl.Add(spec.Name.Name)
 					}
+				// collect methods
 				} else if reflect.TypeOf(d).Elem().Name() == "FuncDecl" {
 					fd, ok := (d).(*ast.FuncDecl)
 					if !ok {
@@ -187,11 +281,7 @@ func main() {
 		}
 	}
 
-	log.Print("---------------------------")
-	iMap.GenerateAlias()
-	log.Print(iMap)
-	log.Print(sl)
-	log.Print(ml)
+	return iMap, sl, ml
 }
 
 func docHasMatch(regexp *regexp.Regexp, doc *ast.CommentGroup) bool {

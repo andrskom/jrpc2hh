@@ -20,9 +20,9 @@ func NewMethod(n string, a *Struct, r *Struct) *Method {
 }
 
 type Struct struct{
-	Pack string
-	Name string
-	prefix string
+	Pack   string
+	Name   string
+	Prefix string
 }
 
 func NewStruct(p string, n string) *Struct{
@@ -30,5 +30,5 @@ func NewStruct(p string, n string) *Struct{
 }
 
 func (s *Struct) SetPrefix(p string) {
-	s.prefix = p
+	s.Prefix = p
 }

@@ -1,4 +1,4 @@
-package jrpc2hh
+package imports
 
 import (
 	"testing"
@@ -19,7 +19,7 @@ func TestNewImportMap(t *testing.T) {
 func TestRegister(t *testing.T) {
 	a := assert.New(t)
 	iMap := NewImportMap()
-	eImport := "import"
+	eImport := "imports"
 	iMap.Register(eImport)
 	val, ok := (*iMap)[eImport]
 	a.True(ok)
@@ -33,16 +33,16 @@ func TestRegister(t *testing.T) {
 func TestGenerateAlias(t *testing.T) {
 	a := assert.New(t)
 	iMap := NewImportMap()
-	iMap.Register("import")
-	iMap.Register("import/import")
+	iMap.Register("imports")
+	iMap.Register("imports/imports")
 	iMap.Register("blah")
 	iMap.GenerateAlias()
 
-	val, ok := (*iMap)["import"]
+	val, ok := (*iMap)["imports"]
 	a.True(ok)
 	a.Nil(val)
 
-	val, ok = (*iMap)["import/import"]
+	val, ok = (*iMap)["imports/imports"]
 	a.True(ok)
 	a.Regexp("^import_[0-9]+$", *val)
 

@@ -3,6 +3,7 @@ package testservice
 import (
 	jModels "github.com/andrskom/jrpc2hh/models"
 	"models"
+	anotherModel "some/models"
 	"net"
 )
 
@@ -30,12 +31,12 @@ type Test2NilResultArgs struct {
 }
 
 // jrpc2hh:method
-func (s *Test2) NilResult(args Test2NilResultArgs, res *jModels.NilResult) error {
+func (s *Test2) NilResult(args models.Test2NilResultArgs, res *jModels.NilResult) error {
 	return nil
 }
 
 // jrpc2hh:method
-func (s *Test2) AnotherPackageResult(args jModels.NilArgs, res *models.SomeModel) error {
+func (s *Test2) AnotherPackageResult(args anotherModel.NilArgs, res *models.SomeModel) error {
 	return nil
 }
 

@@ -1,4 +1,4 @@
-package jrpc2hh
+package imports
 
 import (
 	"fmt"
@@ -11,8 +11,10 @@ type ImportMap map[string]*string
 
 func NewImportMap() *ImportMap {
 	am := make(ImportMap)
-	tmp := "jModel"
+	tmp := "jModels"
 	am["github.com/andrskom/jrpc2hh/models"] = &tmp
+	tmp1 := "json"
+	am["encoding/json"] = &tmp1
 	return &am
 }
 
@@ -26,6 +28,9 @@ func (am *ImportMap) GenerateAlias() {
 	crossMap := make(map[string]*bool)
 	for i, _ := range *am {
 		var p string
+		if ((*am)[i] != nil) {
+			continue
+		}
 		if strings.Contains(i, "/") {
 			path := strings.Split(i, "/")
 			p = path[len(path)-1]
@@ -38,6 +43,15 @@ func (am *ImportMap) GenerateAlias() {
 			tmp := fmt.Sprintf("%s_%d", p, randomNumberGenerator().Int())
 			(*am)[i] = &tmp
 		}
+	}
+}
+
+func (am *ImportMap) GetFormattedAlias(name string) string {
+	if (*am)[name] == nil {
+		path := strings.Split(name, "/")
+		return path[len(path)-1]
+	} else {
+		return *((*am)[name])
 	}
 }
 
