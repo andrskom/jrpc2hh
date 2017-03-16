@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"context"
 	"github.com/andrskom/jrpc2hh/models"
 	"errors"
 	"sync"
@@ -17,13 +16,12 @@ type Caller interface {
 }
 
 type Handler struct {
-	ctx *context.Context
 	mu sync.Mutex
 	sMap map[string]Caller
 }
 
-func NewHandler(ctx *context.Context) *Handler {
-	return &Handler{ctx: ctx, sMap: make(map[string]Caller)}
+func NewHandler() *Handler {
+	return &Handler{sMap: make(map[string]Caller)}
 }
 
 func (h *Handler) Register(c Caller) error {
