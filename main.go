@@ -59,10 +59,31 @@ func main() {
 }
 
 func generate(iMap *imports.ImportMap, sl service.ServiceList, ml method.MethodList) {
-	sTmpl, err := template.ParseFiles("./templates/service.tmpl")
+	sTmpl, err := template.New("serviceTemplate").Parse(`package {{.Package}}
+
+import (
+	"fmt"
+	{{range $index, $element := .Imports}}{{$element}} "{{$index}}"
+	{{end}}
+)
+
+func (s *{{.Service}}) Call(reqBody *jModels.RequestBody) (interface{}, *jModels.Error) {
+	switch reqBody.GetMethod() {
+	{{range $element := .Methods}}{{$element}}
+	{{end}}default:
+		return nil, jModels.NewError(jModels.ErrorCodeMethodNotFound, fmt.Sprintf("Unknown method '%s' for service '%s'", reqBody.GetMethod(), "{{.Service}}"), nil)
+	}
+}`)
 	logFatal("Can't parse service template", err)
 
-	mTmpl, err := template.ParseFiles("./templates/method.tmpl")
+	mTmpl, err := template.New("methodTemplate").Parse(`case "{{.Method}}":
+		{{.ArgsBlock}}
+		{{.ResultBlock}}
+		err := s.{{.Method}}(args, &res)
+		if err != nil {
+			return nil, jModels.NewError(jModels.ErrorCodeInternalError, "Internal error", err.Error())
+		}
+		return res, nil`)
 	logFatal("Can't parse method template", err)
 
 	for sn, sm := range ml {
