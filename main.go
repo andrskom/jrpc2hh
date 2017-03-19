@@ -50,12 +50,6 @@ func main() {
 	iMap, sl, ml := parse(regExpService, regExpMethod, packages)
 	iMap.GenerateAlias()
 	generate(iMap, sl, ml)
-
-	log.Print("---------------------------")
-
-	log.Print(iMap)
-	log.Print(sl)
-	log.Print(ml)
 }
 
 func generate(iMap *imports.ImportMap, sl service.ServiceList, ml method.MethodList) {
@@ -89,6 +83,7 @@ func (s *{{.Service}}) Call(reqBody *jModels.RequestBody) (interface{}, *jModels
 	for sn, sm := range ml {
 		usedImports := make(map[string]string)
 		usedImports["encoding/json"] = "json"
+		usedImports["github.com/andrskom/jrpc2hh/models"] = "jModels"
 		methods := make([]string, 0)
 		for _, m := range sm {
 			args := generateArgsBlock(m.Args, &usedImports, iMap)
@@ -101,8 +96,6 @@ func (s *{{.Service}}) Call(reqBody *jModels.RequestBody) (interface{}, *jModels
 				ResultBlock string
 			}{m.Name, args, res})
 			methods = append(methods, buf.String())
-			log.Print(buf.String())
-			log.Print(usedImports)
 		}
 
 		file, err := os.OpenFile(fmt.Sprintf("%s/jrpc2hh_%s.go", hDir, strings.ToLower(sn)),

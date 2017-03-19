@@ -91,7 +91,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				models.JsonResponse(w, models.NewResponseError(jErr, jReq.Id), http.StatusInternalServerError)
 				return
 			}
-			models.JsonResponse(w, models.NewResponseBody(&json.RawMessage(resByte), jReq.Id), http.StatusOK)
+			jsonRes := json.RawMessage(resByte)
+			models.JsonResponse(w, models.NewResponseBody(&jsonRes, jReq.Id), http.StatusOK)
 		}
 
 		return
