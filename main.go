@@ -17,6 +17,7 @@ import (
 	"github.com/andrskom/jrpc2hh/service"
 	"github.com/andrskom/jrpc2hh/method"
 	"bytes"
+	"github.com/andrskom/jrpc2hh/templates"
 )
 
 
@@ -53,31 +54,10 @@ func main() {
 }
 
 func generate(iMap *imports.ImportMap, sl service.ServiceList, ml method.MethodList) {
-	sTmpl, err := template.New("serviceTemplate").Parse(`package {{.Package}}
-
-import (
-	"fmt"
-	{{range $index, $element := .Imports}}{{$element}} "{{$index}}"
-	{{end}}
-)
-
-func (s *{{.Service}}) Call(reqBody *jModels.RequestBody) (interface{}, *jModels.Error) {
-	switch reqBody.GetMethod() {
-	{{range $element := .Methods}}{{$element}}
-	{{end}}default:
-		return nil, jModels.NewError(jModels.ErrorCodeMethodNotFound, fmt.Sprintf("Unknown method '%s' for service '%s'", reqBody.GetMethod(), "{{.Service}}"), nil)
-	}
-}`)
+	sTmpl, err := template.New("serviceTemplate").Parse(templates.Service)
 	logFatal("Can't parse service template", err)
 
-	mTmpl, err := template.New("methodTemplate").Parse(`case "{{.Method}}":
-		{{.ArgsBlock}}
-		{{.ResultBlock}}
-		err := s.{{.Method}}(args, &res)
-		if err != nil {
-			return nil, jModels.NewError(jModels.ErrorCodeInternalError, "Internal error", err.Error())
-		}
-		return res, nil`)
+	mTmpl, err := template.New("methodTemplate").Parse(templates.Method)
 	logFatal("Can't parse method template", err)
 
 	for sn, sm := range ml {
@@ -131,10 +111,7 @@ func generateResBlock(res *method.Struct, ui *map[string]string, iMap *imports.I
 func generateArgsBlock(args *method.Struct, ui *map[string]string, iMap *imports.ImportMap) string{
 	if args.Pack+args.Name == "github.com/andrskom/jrpc2hh/modelsNilArgs" {
 		(*ui)[args.Pack] = iMap.GetFormattedAlias(args.Pack)
-		return `if reqBody.HasParams() {
-			return nil, jModels.NewError(jModels.ErrorCodeInvalidParams, "That method of service can't has param", nil)
-		}
-		var args jModels.NilArgs`
+		return templates.ArgsEmpty
 	} else {
 		var argsType string
 		if args.Pack != "" {
@@ -143,13 +120,7 @@ func generateArgsBlock(args *method.Struct, ui *map[string]string, iMap *imports
 		} else {
 			argsType = args.Name
 		}
-		return fmt.Sprintf(`var args %s
-		if reqBody.HasParams() {
-			err := json.Unmarshal(*reqBody.Params, &args)
-			if err != nil {
-				return nil, jModels.NewError(jModels.ErrorCodeInvalidParams, "Can't unmarshal params to args structure'", err.Error())
-			}
-		}`, argsType)
+		return fmt.Sprintf(templates.Args, argsType)
 	}
 }
 
