@@ -10,8 +10,8 @@ func (ml MethodList) Add(typeName string, m *Method) {
 }
 
 type Method struct {
-	Name string
-	Args *Struct
+	Name   string
+	Args   *Struct
 	Result *Struct
 }
 
@@ -19,13 +19,13 @@ func NewMethod(n string, a *Struct, r *Struct) *Method {
 	return &Method{n, a, r}
 }
 
-type Struct struct{
+type Struct struct {
 	Pack   string
 	Name   string
 	Prefix string
 }
 
-func NewStruct(p string, n string) *Struct{
+func NewStruct(p string, n string) *Struct {
 	return &Struct{p, n, ""}
 }
 

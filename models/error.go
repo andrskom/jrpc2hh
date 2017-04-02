@@ -19,9 +19,9 @@ type Error struct {
 }
 
 func NewError(code ErrorCode, mes string, data interface{}) *Error {
-	return &Error{code,mes, data}
+	return &Error{code, mes, data}
 }
 
-func (e *Error) Error() string  {
+func (e *Error) Error() string {
 	return fmt.Sprintf("Code: %d, Message: '%s', Data, %+v", e.Code, e.Message, e.Data)
 }

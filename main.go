@@ -1,25 +1,24 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"github.com/andrskom/jrpc2hh/gen/imports"
+	"github.com/andrskom/jrpc2hh/gen/method"
+	"github.com/andrskom/jrpc2hh/gen/service"
+	"github.com/andrskom/jrpc2hh/gen/templates"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
-	"text/template"
-	"github.com/andrskom/jrpc2hh/imports"
-	"strings"
 	"reflect"
-	"go/ast"
-	"github.com/andrskom/jrpc2hh/service"
-	"github.com/andrskom/jrpc2hh/method"
-	"bytes"
-	"github.com/andrskom/jrpc2hh/templates"
+	"regexp"
+	"strings"
+	"text/template"
 )
-
 
 var hDir string
 var pack string
@@ -71,8 +70,8 @@ func generate(iMap *imports.ImportMap, sl service.ServiceList, ml method.MethodL
 
 			buf := bytes.NewBuffer(make([]byte, 0))
 			mTmpl.Execute(buf, struct {
-				Method string
-				ArgsBlock string
+				Method      string
+				ArgsBlock   string
 				ResultBlock string
 			}{m.Name, args, res})
 			methods = append(methods, buf.String())
@@ -108,7 +107,7 @@ func generateResBlock(res *method.Struct, ui *map[string]string, iMap *imports.I
 	}
 }
 
-func generateArgsBlock(args *method.Struct, ui *map[string]string, iMap *imports.ImportMap) string{
+func generateArgsBlock(args *method.Struct, ui *map[string]string, iMap *imports.ImportMap) string {
 	if args.Pack+args.Name == "github.com/andrskom/jrpc2hh/modelsNilArgs" {
 		(*ui)[args.Pack] = iMap.GetFormattedAlias(args.Pack)
 		return templates.ArgsEmpty
@@ -164,7 +163,7 @@ func parse(regExpService *regexp.Regexp, regExpMethod *regexp.Regexp, packages m
 						}
 						sl.Add(spec.Name.Name)
 					}
-				// collect methods
+					// collect methods
 				} else if reflect.TypeOf(d).Elem().Name() == "FuncDecl" {
 					fd, ok := (d).(*ast.FuncDecl)
 					if !ok {

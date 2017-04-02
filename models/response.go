@@ -1,31 +1,24 @@
 package models
 
 import (
-	"net/http"
 	"encoding/json"
+	"net/http"
 )
 
-type ResponseBodyError struct {
-	JsonRpc string                `json:"jsonrpc"`
-	Error   *Error                 `json:"error"`
-	Id      *uint                 `json:"id"`
-}
-
 type ResponseBody struct {
-	JsonRpc string                `json:"jsonrpc"`
-	Result  *json.RawMessage      `json:"result,omitempty"`
-	Id      *uint                 `json:"id"`
+	JsonRpc string           `json:"jsonrpc"`
+	Result  *json.RawMessage `json:"result,omitempty"`
+	Error   *Error           `json:"error,omitempty"`
+	Id      *uint            `json:"id"`
 }
 
-
-func NewResponseError(error *Error, id *uint) *ResponseBodyError {
-	return &ResponseBodyError{
+func NewResponseError(error *Error, id *uint) *ResponseBody {
+	return &ResponseBody{
 		JsonRpc: "2.0",
-		Error: error,
-		Id: id,
+		Error:   error,
+		Id:      id,
 	}
 }
-
 
 func NewResponseBody(result *json.RawMessage, id *uint) *ResponseBody {
 	return &ResponseBody{

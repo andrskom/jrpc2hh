@@ -12,7 +12,7 @@ func (sl ServiceList) Add(sName string) {
 	}
 }
 
-type Service struct{
+type Service struct {
 	Name string
 }
 

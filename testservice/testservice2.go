@@ -3,8 +3,8 @@ package testservice
 import (
 	jModels "github.com/andrskom/jrpc2hh/models"
 	"models"
-	anotherModel "some/models"
 	"net"
+	anotherModel "some/models"
 )
 
 // jrpc2hh:service

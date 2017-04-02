@@ -28,7 +28,7 @@ func (am *ImportMap) GenerateAlias() {
 	crossMap := make(map[string]*bool)
 	for i, _ := range *am {
 		var p string
-		if ((*am)[i] != nil) {
+		if (*am)[i] != nil {
 			continue
 		}
 		if strings.Contains(i, "/") {

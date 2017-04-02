@@ -3,15 +3,15 @@ package models
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 	"unicode/utf8"
-	"net/http"
 )
 
 type RequestBody struct {
 	JsonRpc string           `json:"jsonrpc"`
 	Method  string           `json:"method"`
-	Id      *uint             `json:"id"`
+	Id      *uint            `json:"id"`
 	Params  *json.RawMessage `json:"params,omitempty"`
 }
 
@@ -22,7 +22,7 @@ func (r *RequestBody) Validate() error {
 
 	dotI := strings.Index(r.Method, ".")
 	if dotI < 0 || strings.Count(r.Method, ".") != 1 ||
-		dotI == 0 || dotI == (utf8.RuneCountInString(r.Method)-1){
+		dotI == 0 || dotI == (utf8.RuneCountInString(r.Method)-1) {
 		return errors.New("Bad request, bad format field 'method'")
 	}
 
