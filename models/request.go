@@ -26,7 +26,7 @@ func (r *RequestBody) Validate() error {
 		return errors.New("Bad request, bad format field 'method'")
 	}
 
-	if r.Id == nil || *r.Id == 0 {
+	if r.Id == nil {
 		return errors.New("Bad request, bad format field 'id'")
 	}
 
