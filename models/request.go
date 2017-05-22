@@ -11,7 +11,7 @@ import (
 type RequestBody struct {
 	JsonRpc string           `json:"jsonrpc"`
 	Method  string           `json:"method"`
-	Id      *uint            `json:"id"`
+	Id      *interface{}     `json:"id"`
 	Params  *json.RawMessage `json:"params,omitempty"`
 }
 
