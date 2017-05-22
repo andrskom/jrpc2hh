@@ -9,10 +9,10 @@ type ResponseBody struct {
 	JsonRpc string           `json:"jsonrpc"`
 	Result  *json.RawMessage `json:"result,omitempty"`
 	Error   *Error           `json:"error,omitempty"`
-	Id      *uint            `json:"id"`
+	Id      *interface{}     `json:"id"`
 }
 
-func NewResponseError(error *Error, id *uint) *ResponseBody {
+func NewResponseError(error *Error, id *interface{}) *ResponseBody {
 	return &ResponseBody{
 		JsonRpc: "2.0",
 		Error:   error,
@@ -20,7 +20,7 @@ func NewResponseError(error *Error, id *uint) *ResponseBody {
 	}
 }
 
-func NewResponseBody(result *json.RawMessage, id *uint) *ResponseBody {
+func NewResponseBody(result *json.RawMessage, id *interface{}) *ResponseBody {
 	return &ResponseBody{
 		JsonRpc: "2.0",
 		Result:  result,
