@@ -15,9 +15,15 @@ type Caller interface {
 	Call(reqBody *models.RequestBody) (interface{}, *models.Error)
 }
 
+type Validator interface {
+	Validate(service string, method string, params *json.RawMessage) error
+}
+
 type Handler struct {
-	mu   sync.Mutex
-	sMap map[string]Caller
+	mu           sync.Mutex
+	sMap         map[string]Caller
+	validator    Validator
+	needValidate bool
 }
 
 func NewHandler() *Handler {
@@ -141,6 +147,13 @@ func (h *Handler) doProcedure(jReq *models.RequestBody) (*models.ResponseBody, i
 	if mErr != nil {
 		return models.NewResponseError(mErr, jReq.Id), http.StatusNotFound
 	}
+	if h.needValidate {
+		err = h.validator.Validate(jReq.GetService(), jReq.GetMethod(), jReq.Params)
+		if err != nil {
+			jErr := models.NewError(models.ErrorCodeInvalidParams, "Invalid params", err.Error())
+			return models.NewResponseError(jErr, jReq.Id), http.StatusInternalServerError
+		}
+	}
 	res, jErr := s.Call(jReq)
 	if jErr != nil {
 		return models.NewResponseError(jErr, jReq.Id), http.StatusInternalServerError
@@ -157,4 +170,9 @@ func (h *Handler) doProcedure(jReq *models.RequestBody) (*models.ResponseBody, i
 		jsonRes := json.RawMessage(resByte)
 		return models.NewResponseBody(&jsonRes, jReq.Id), http.StatusOK
 	}
+}
+
+func (h *Handler) SetValidator(validator Validator) {
+	h.validator = validator
+	h.needValidate = true
 }
