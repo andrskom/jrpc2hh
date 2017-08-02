@@ -7,13 +7,14 @@ var Service string = `package {{.Package}}
 
 import (
 	"fmt"
+	"net/http"
 	{{range $index, $element := .Imports}}{{$element}} "{{$index}}"
 	{{end}}
 )
 
 // Call method for routing
 // nolint:gocyclo
-func (s *{{.Service}}) Call(reqBody *jModels.RequestBody) (interface{}, *jModels.Error) {
+func (s *{{.Service}}) Call(reqBody *jModels.RequestBody, r *http.Request) (interface{}, *jModels.Error) {
 	switch reqBody.GetMethod() {
 	{{range $element := .Methods}}{{$element}}
 	{{end}}default:
