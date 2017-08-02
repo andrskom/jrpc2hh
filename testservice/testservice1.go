@@ -34,7 +34,7 @@ func (s *Test1) NilResult(args Test1NilResultArgs, res *jModels.NilResult) error
 	return nil
 }
 
-// jrpc2hh:method
+// jrpc2hh:method:withContext
 func (s *Test1) AnotherPackageResult(args jModels.NilArgs, res *models.SomeModel) error {
 	return nil
 }

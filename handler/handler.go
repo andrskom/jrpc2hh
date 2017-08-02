@@ -12,7 +12,7 @@ import (
 )
 
 type Caller interface {
-	Call(reqBody *models.RequestBody) (interface{}, *models.Error)
+	Call(reqBody *models.RequestBody, r *http.Request) (interface{}, *models.Error)
 }
 
 type Validator interface {
@@ -82,7 +82,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var jReq *models.RequestBody
 	errReq := json.Unmarshal(reqBodyBytes, &jReq)
 	if errReq == nil {
-		rB, httpSt := h.doProcedure(jReq)
+		rB, httpSt := h.doProcedure(jReq, req)
 		models.JsonResponse(w, rB, httpSt)
 		return
 	}
@@ -96,12 +96,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Slice []*models.ResponseBody
 		}{Slice: make([]*models.ResponseBody, 0)}
 		wg := sync.WaitGroup{}
-		for _, req := range jReqBatchSlice {
+		for _, reqMessage := range jReqBatchSlice {
 			wg.Add(1)
-			go func(req json.RawMessage) {
+			go func(reqMessage json.RawMessage, r *http.Request) {
 				defer wg.Done()
 				var jReqBatch *models.RequestBody
-				err := json.Unmarshal(req, &jReqBatch)
+				err := json.Unmarshal(reqMessage, &jReqBatch)
 				if err != nil {
 					jRespBatchSlice.Lock()
 					defer jRespBatchSlice.Unlock()
@@ -115,14 +115,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 							nil,
 						))
 				} else {
-					rB, _ := h.doProcedure(jReqBatch)
+					rB, _ := h.doProcedure(jReqBatch, r)
 					jRespBatchSlice.Lock()
 					defer jRespBatchSlice.Unlock()
 					jRespBatchSlice.Slice = append(
 						jRespBatchSlice.Slice,
 						rB)
 				}
-			}(req)
+			}(reqMessage, req)
 		}
 		wg.Wait()
 		models.JsonResponse(w, jRespBatchSlice.Slice, http.StatusOK)
@@ -137,7 +137,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	return
 }
 
-func (h *Handler) doProcedure(jReq *models.RequestBody) (*models.ResponseBody, int) {
+func (h *Handler) doProcedure(jReq *models.RequestBody, r *http.Request) (*models.ResponseBody, int) {
 	err := jReq.Validate()
 	if err != nil {
 		jErr := models.NewError(models.ErrorCodeParseError, err.Error(), nil)
@@ -154,7 +154,7 @@ func (h *Handler) doProcedure(jReq *models.RequestBody) (*models.ResponseBody, i
 			return models.NewResponseError(jErr, jReq.Id), http.StatusInternalServerError
 		}
 	}
-	res, jErr := s.Call(jReq)
+	res, jErr := s.Call(jReq, r)
 	if jErr != nil {
 		return models.NewResponseError(jErr, jReq.Id), http.StatusInternalServerError
 	}

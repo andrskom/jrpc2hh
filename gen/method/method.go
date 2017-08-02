@@ -13,10 +13,11 @@ type Method struct {
 	Name   string
 	Args   *Struct
 	Result *Struct
+	ArgsWithContext bool
 }
 
-func NewMethod(n string, a *Struct, r *Struct) *Method {
-	return &Method{n, a, r}
+func NewMethod(n string, a *Struct, r *Struct, withContext bool) *Method {
+	return &Method{n, a, r ,withContext}
 }
 
 type Struct struct {
